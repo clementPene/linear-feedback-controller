@@ -9,6 +9,8 @@ Releases are available on the [github repository](https://github.com/loco-3d/lin
 
 ## [Unreleased]
 
+- add missing include for `std::cerr`
+
 ## [4.0.3] - 2026-07-17
 
 - fix changelog
