@@ -1,5 +1,7 @@
 #include "linear_feedback_controller/linear_feedback_controller.hpp"
 
+#include <iostream>
+
 namespace linear_feedback_controller {
 
 LinearFeedbackController::LinearFeedbackController() {
