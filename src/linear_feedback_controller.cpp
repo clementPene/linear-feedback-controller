@@ -27,7 +27,8 @@ bool LinearFeedbackController::load(const ControllerParameters& params) {
   pd_controller_.set_gains(params_.p_gains, params_.d_gains);
 
   // Setup the lfc controller.
-  lf_controller_.initialize(robot_model_builder_);
+  lf_controller_.initialize(robot_model_builder_,
+                            params_.contact_force_n_directions);
 
   // Allocate memory
   robot_configuration_ = Eigen::VectorXd::Zero(robot_model_builder_->get_nq());

@@ -49,3 +49,31 @@ linear_feedback_controller:
       gt_eq<>: 0.0
     }
   }
+  contact_force_feedback:
+    n_directions: {
+      type: int,
+      default_value: 0,
+      description: "Number of contact-force directions appended to the feedback state. 0 (default) = plain [q, v] feedback, unchanged behaviour. n > 0 enables the augmented Riccati force channel: the received feedback_gain is expected to be joint_nv x (2*nv + n) and its last n columns are applied to (f0 - f_measured), where f0 comes from Control.initial_state.contacts and f_measured from the live measured_topic.",
+      validation: { gt_eq<>: 0 }
+    }
+    contact_name: {
+      type: string,
+      default_value: "",
+      description: "Name of the Contact entry (in Control.initial_state.contacts and in the measured_topic Sensor) whose wrench feeds the force channel. Required when n_directions > 0.",
+    }
+    wrench_indices: {
+      type: int_array,
+      default_value: [],
+      description: "Which components of the 6D contact wrench [fx, fy, fz, tx, ty, tz] feed the force channel, in order. Length must equal n_directions. e.g. [2] for a 1D contact along the contact-frame z axis.",
+    }
+    measured_topic: {
+      type: string,
+      default_value: "sensor_with_force",
+      description: "Topic (linear_feedback_controller_msgs/Sensor) carrying the live, gravity-compensated, filtered contact wrench and the contact.active flag.",
+    }
+    activation_time_constant: {
+      type: double,
+      default_value: 0.05,
+      description: "First-order time constant (seconds) smoothing the [0, 1] blend that gates the force channel on contact.active. 0 = hard on/off.",
+      validation: { gt_eq<>: 0.0 }
+    }

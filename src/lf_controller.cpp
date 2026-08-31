@@ -8,11 +8,16 @@ LFController::LFController() {}
 
 LFController::~LFController() {}
 
-void LFController::initialize(const RobotModelBuilder::SharedPtr& rmb) {
+void LFController::initialize(const RobotModelBuilder::SharedPtr& rmb,
+                             int n_force_dirs) {
   if (!rmb) {
     throw std::invalid_argument("RobotModelBuilder pointer cannot be null.");
   }
+  if (n_force_dirs < 0) {
+    throw std::invalid_argument("n_force_dirs must be >= 0.");
+  }
   rmb_ = rmb;
+  n_force_dirs_ = n_force_dirs;
   const auto nq = rmb_->get_nq();
   const auto nv = rmb_->get_nv();
   const auto joint_nv = rmb_->get_joint_nv();
@@ -22,7 +27,8 @@ void LFController::initialize(const RobotModelBuilder::SharedPtr& rmb) {
   measured_configuration_ = Eigen::VectorXd::Zero(nq);
   measured_velocity_ = Eigen::VectorXd::Zero(nv);
   control_ = Eigen::VectorXd::Zero(joint_nv);
-  diff_state_ = Eigen::VectorXd::Zero(2 * nv);
+  // [ dq(nv); dv(nv); df(n_force_dirs_) ]
+  diff_state_ = Eigen::VectorXd::Zero(2 * nv + n_force_dirs_);
 }
 
 const Eigen::VectorXd& LFController::compute_control(
@@ -48,11 +54,13 @@ const Eigen::VectorXd& LFController::compute_control(
                               measured_velocity_);
 
   // Compute the linear feedback controller desired torque.
+  const auto nv = rmb_->get_model().nv;
   pinocchio::difference(rmb_->get_model(), measured_configuration_,
-                        desired_configuration_,
-                        diff_state_.head(rmb_->get_model().nv));
-  diff_state_.tail(rmb_->get_model().nv) =
-      desired_velocity_ - measured_velocity_;
+                        desired_configuration_, diff_state_.head(nv));
+  diff_state_.segment(nv, nv) = desired_velocity_ - measured_velocity_;
+  // diff_state_.tail(n_force_dirs_) — the contact-force error — is filled by a
+  // later step; it stays zero here, so the augmented feedback_gain columns
+  // contribute nothing until then.
   control_.noalias() =
       control_msg.feedforward + control_msg.feedback_gain * diff_state_;
 

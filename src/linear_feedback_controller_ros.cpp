@@ -506,6 +506,8 @@ bool LinearFeedbackControllerRos::load_linear_feedback_controller(
   lfc_params.robot_has_free_flyer = parameters_.robot_has_free_flyer;
   lfc_params.pd_to_lf_transition_duration =
       Duration(parameters_.pd_to_lf_transition_duration);
+  lfc_params.contact_force_n_directions =
+      static_cast<int>(parameters_.contact_force_feedback.n_directions);
   return lfc_.load(lfc_params);
 }
 
@@ -586,12 +588,20 @@ bool LinearFeedbackControllerRos::allocate_memory() {
   /**
    * Feedback gain matrix K:
    *  - nb of rows = joint_nv = nb of controlled joints
-   *  - nb of columns = 2 * nv  (e.g. [q; v] truncated/filtred on LFC side)
+   *  - nb of columns = 2 * nv (+ contact_force_feedback.n_directions)
    *
    * When there is no free-flyer, joint_nv == nv.
    * With free-flyer, joint_nv is < nv (we don't control the base).
+   *
+   * The columns count MUST match what the upstream controller sends:
+   * matrixMsgToEigen() asserts on the shape. With n_directions > 0 the
+   * upstream OCP is expected to be an augmented soft-contact one whose
+   * Riccati gain is joint_nv x (2*nv + n_directions).
    */
-  input_control_.feedback_gain = Eigen::MatrixXd::Zero(joint_nv, 2 * nv);
+  const int n_force_dirs =
+      static_cast<int>(parameters_.contact_force_feedback.n_directions);
+  input_control_.feedback_gain =
+      Eigen::MatrixXd::Zero(joint_nv, 2 * nv + n_force_dirs);
   input_control_.feedback_gain.fill(
       std::numeric_limits<double>::signaling_NaN());
 

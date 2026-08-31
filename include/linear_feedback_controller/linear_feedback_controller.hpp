@@ -26,6 +26,10 @@ struct LINEAR_FEEDBACK_CONTROLLER_PUBLIC ControllerParameters {
   std::vector<std::string> controlled_joint_names;
   bool robot_has_free_flyer;
   Duration pd_to_lf_transition_duration;
+  /// @brief Number of contact-force directions appended to the feedback state
+  /// (0 = plain [q, v] feedback). See linear_feedback_controller.yaml
+  /// contact_force_feedback.
+  int contact_force_n_directions = 0;
 };
 
 /**
