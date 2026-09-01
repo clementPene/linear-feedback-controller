@@ -27,6 +27,7 @@ void LFController::initialize(const RobotModelBuilder::SharedPtr& rmb) {
   diff_state_ = Eigen::VectorXd::Zero(2 * nv);
 
   u_fb_ = Eigen::VectorXd::Zero(joint_nv);
+  u_fb_raw_ = Eigen::VectorXd::Zero(joint_nv);
   fb_lp_out_ = Eigen::VectorXd::Zero(joint_nv);
   fb_lp_x1_ = Eigen::VectorXd::Zero(joint_nv);
   fb_lp_x2_ = Eigen::VectorXd::Zero(joint_nv);
@@ -83,6 +84,7 @@ const Eigen::VectorXd& LFController::compute_control(
 
   // Feedback torque, optionally low-pass filtered (see configure_feedback_lowpass).
   u_fb_.noalias() = control_msg.feedback_gain * diff_state_;
+  u_fb_raw_ = u_fb_;
   if (fb_lp_enabled_) {
     if (!fb_lp_primed_) {
       fb_lp_x1_ = fb_lp_x2_ = fb_lp_y1_ = fb_lp_y2_ = u_fb_;

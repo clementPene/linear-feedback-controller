@@ -83,6 +83,23 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackController {
 
   RobotModelBuilder::ConstSharedPtr get_robot_model() const;
 
+  /// @name Introspection of the last LF compute_control() (for /lfc_debug).
+  /// Values are stale during the pure-PD and PD->LF transition phases.
+  /// @{
+  const Eigen::VectorXd& get_lf_feedback_torque_raw() const {
+    return lf_controller_.get_feedback_torque_raw();
+  }
+  const Eigen::VectorXd& get_lf_feedback_torque() const {
+    return lf_controller_.get_feedback_torque();
+  }
+  const Eigen::VectorXd& get_lf_desired_configuration() const {
+    return lf_controller_.get_desired_configuration();
+  }
+  const Eigen::VectorXd& get_lf_desired_velocity() const {
+    return lf_controller_.get_desired_velocity();
+  }
+  /// @}
+
  private:
   ControllerParameters params_; /*! @brief Parameters of the controller. */
   /// @brief Control to be sent to the low-level controller.

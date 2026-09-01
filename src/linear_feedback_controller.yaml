@@ -66,3 +66,8 @@ linear_feedback_controller:
     description: "2nd-order Butterworth low-pass cutoff (Hz) applied to the feedback torque u_fb = K*(x - x_ref) before adding the feedforward. 0 disables it. Paired with reference_interpolation this is the paper's u3 policy; the paper reports the filter is a minor improvement once the interpolation is in.",
     validation: { gt_eq<>: 0.0 }
   }
+  debug_publish: {
+    type: bool,
+    default_value: false,
+    description: "Publish a std_msgs/Float64MultiArray on the `lfc_debug` topic every control cycle with [alpha, q_ref, v_ref, u_ff, u_fb_raw, u_fb, u_cmd] (layout.dim labels the blocks). Realtime-safe (try-lock RealtimePublisher). For offline analysis of the delay-compensation interpolation / low-pass; leave off in production.",
+  }

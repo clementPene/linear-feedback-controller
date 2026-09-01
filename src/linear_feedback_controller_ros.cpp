@@ -247,7 +247,35 @@ return_type LinearFeedbackControllerRos::update_and_write_commands(
     joint_effort_command_interface_[i].get().set_value(output_joint_effort_[i]);
 #endif
   }
+
+  publish_debug(time);
   return return_type::OK;
+}
+
+void LinearFeedbackControllerRos::publish_debug(const rclcpp::Time& time) {
+  if (!debug_publisher_rt_) return;
+
+  auto& d = debug_msg_.data;
+  const Eigen::Index n = output_joint_effort_.size();
+  if (static_cast<Eigen::Index>(d.size()) != 2 + 6 * n) return;
+
+  size_t k = 0;
+  d[k++] = time.seconds();
+  d[k++] = last_interp_alpha_;
+  const auto put = [&](const Eigen::VectorXd& v) {
+    for (Eigen::Index i = 0; i < n; ++i)
+      d[k++] = (i < v.size()) ? v[i] : 0.0;
+  };
+  put(lfc_.get_lf_desired_configuration());
+  put(lfc_.get_lf_desired_velocity());
+  put(input_control_.feedforward);
+  put(lfc_.get_lf_feedback_torque_raw());
+  put(lfc_.get_lf_feedback_torque());
+  put(output_joint_effort_);
+
+  // Realtime-safe: internally try-locks and copies; drops the sample on
+  // contention rather than blocking the control loop.
+  debug_publisher_rt_->try_publish(debug_msg_);
 }
 
 bool LinearFeedbackControllerRos::update_parameters() {
@@ -634,6 +662,34 @@ bool LinearFeedbackControllerRos::allocate_memory() {
       "mpc_x_next", qos,
       std::bind(&LinearFeedbackControllerRos::mpc_x_next_subscription_callback,
                 this, _1));
+
+  if (parameters_.debug_publish) {
+    debug_publisher_ =
+        get_node()->create_publisher<std_msgs::msg::Float64MultiArray>(
+            "lfc_debug", rclcpp::QoS(10));
+    debug_publisher_rt_ = std::make_shared<
+        realtime_tools::RealtimePublisher<std_msgs::msg::Float64MultiArray>>(
+        debug_publisher_);
+    // Layout: [ time, alpha, q_ref(nv), v_ref(nv), u_ff(nv), u_fb_raw(nv),
+    //           u_fb(nv), u_cmd(nv) ]. dim labels the blocks for offline tools.
+    const auto b = [&](const std::string& label, size_t size) {
+      std_msgs::msg::MultiArrayDimension d;
+      d.label = label;
+      d.size = static_cast<uint32_t>(size);
+      d.stride = 0;
+      debug_msg_.layout.dim.push_back(d);
+    };
+    const size_t n = static_cast<size_t>(joint_nv);
+    b("time", 1);
+    b("alpha", 1);
+    b("q_ref", n);
+    b("v_ref", n);
+    b("u_ff", n);
+    b("u_fb_raw", n);
+    b("u_fb", n);
+    b("u_cmd", n);
+    debug_msg_.data.assign(2 + 6 * n, 0.0);
+  }
   return true;
 }
 
@@ -661,6 +717,7 @@ void LinearFeedbackControllerRos::mpc_x_next_subscription_callback(
 
 void LinearFeedbackControllerRos::interpolate_control_reference(
     const rclcpp::Time& time) {
+  last_interp_alpha_ = 0.0;
   if (!parameters_.reference_interpolation) return;
 
   synched_input_x_next_msg_.mutex.lock();
@@ -682,6 +739,7 @@ void LinearFeedbackControllerRos::interpolate_control_reference(
   double alpha =
       (time - last_control_switch_time_).seconds() / parameters_.mpc_period;
   alpha = std::clamp(alpha, 0.0, 1.0);
+  last_interp_alpha_ = alpha;
 
   auto& q = input_control_.initial_state.joint_state.position;
   auto& v = input_control_.initial_state.joint_state.velocity;

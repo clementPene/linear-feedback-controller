@@ -28,6 +28,23 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
       const linear_feedback_controller_msgs::Eigen::Sensor& sensor_msg,
       const linear_feedback_controller_msgs::Eigen::Control& control_msg);
 
+  /// @name Introspection of the last compute_control() call (for /lfc_debug).
+  /// @{
+  /// @brief Feedback torque K*(x - x_ref) BEFORE the optional low-pass.
+  const Eigen::VectorXd& get_feedback_torque_raw() const { return u_fb_raw_; }
+  /// @brief Feedback torque actually added to the feedforward (post low-pass).
+  const Eigen::VectorXd& get_feedback_torque() const { return u_fb_; }
+  /// @brief The reference configuration used (= control.initial_state q, already
+  /// interpolated across the MPC cycle by the ROS layer when enabled).
+  const Eigen::VectorXd& get_desired_configuration() const {
+    return desired_configuration_;
+  }
+  /// @brief The reference velocity used (see get_desired_configuration).
+  const Eigen::VectorXd& get_desired_velocity() const {
+    return desired_velocity_;
+  }
+  /// @}
+
  private:
   Eigen::VectorXd desired_configuration_;
   Eigen::VectorXd desired_velocity_;
@@ -53,6 +70,7 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
   Eigen::VectorXd fb_lp_x1_, fb_lp_x2_, fb_lp_y1_, fb_lp_y2_;
   bool fb_lp_primed_ = false;  ///< seed the filter state on the first sample
   Eigen::VectorXd u_fb_;       ///< scratch: K*(x - x_ref) before filtering
+  Eigen::VectorXd u_fb_raw_;   ///< copy of u_fb_ before the low-pass (debug)
   Eigen::VectorXd fb_lp_out_;  ///< scratch: filtered feedback torque
   /// @}
 };
