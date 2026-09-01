@@ -77,6 +77,10 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackController {
       const TimePoint& time, const Sensor& sensor, const Control& control,
       const bool remove_gravity_compensation_effort);
 
+  /// @brief Forwards to LFController::configure_feedback_lowpass — a 2nd-order
+  /// Butterworth on the feedback torque. cutoff_hz 0 disables it.
+  void configure_feedback_lowpass(double cutoff_hz, double sample_rate_hz);
+
   RobotModelBuilder::ConstSharedPtr get_robot_model() const;
 
  private:

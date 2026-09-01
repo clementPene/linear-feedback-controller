@@ -1,5 +1,7 @@
 #include "linear_feedback_controller/linear_feedback_controller_ros.hpp"
 
+#include <algorithm>
+
 #include "controller_interface/helpers.hpp"
 #include "linear_feedback_controller_msgs/eigen_conversions.hpp"
 #include "pal_statistics/pal_statistics_macros.hpp"
@@ -125,6 +127,19 @@ CallbackReturn LinearFeedbackControllerRos::on_activate(
   std::fill(reference_interfaces_.begin(), reference_interfaces_.end(),
             std::numeric_limits<double>::quiet_NaN());
 
+  // Feedback-torque low-pass (delay comp, paper's u3). Sample rate = the
+  // controller-manager update rate. Disabled if cutoff is 0 or rate unknown.
+  const double update_rate = static_cast<double>(get_update_rate());
+  lfc_.configure_feedback_lowpass(parameters_.feedback_lowpass_cutoff_hz,
+                                  update_rate);
+  if (parameters_.feedback_lowpass_cutoff_hz > 0.0 && update_rate <= 0.0) {
+    RCLCPP_WARN(get_node()->get_logger(),
+                "feedback_lowpass_cutoff_hz set but the controller update rate "
+                "is unknown (%f) — feedback low-pass DISABLED.",
+                update_rate);
+  }
+  last_control_ref_stamp_ = builtin_interfaces::msg::Time();
+
   RCLCPP_INFO(get_node()->get_logger(), "Successful activation.");
   return CallbackReturn::SUCCESS;
 }
@@ -199,6 +214,9 @@ return_type LinearFeedbackControllerRos::update_and_write_commands(
   if (input_control_msg_.initial_state.joint_state.name.size() != 0) {
     linear_feedback_controller_msgs::controlMsgToEigen(input_control_msg_,
                                                        input_control_);
+    // Delay compensation: slide the feedback reference across the MPC cycle
+    // (paper's x_tilde). No-op unless reference_interpolation and an mpc_x_next.
+    interpolate_control_reference(time);
   }
   // Copy the output of the control in order to log it.
   output_joint_effort_ =
@@ -612,6 +630,10 @@ bool LinearFeedbackControllerRos::allocate_memory() {
       "control", qos,
       std::bind(&LinearFeedbackControllerRos::control_subscription_callback,
                 this, _1));
+  mpc_x_next_subscriber_ = get_node()->create_subscription<SensorMsg>(
+      "mpc_x_next", qos,
+      std::bind(&LinearFeedbackControllerRos::mpc_x_next_subscription_callback,
+                this, _1));
   return true;
 }
 
@@ -627,6 +649,48 @@ void LinearFeedbackControllerRos::control_subscription_callback(
   synched_input_control_msg_.mutex.lock();
   synched_input_control_msg_.msg = msg;
   synched_input_control_msg_.mutex.unlock();
+}
+
+void LinearFeedbackControllerRos::mpc_x_next_subscription_callback(
+    const SensorMsg msg) {
+  RCLCPP_INFO_ONCE(get_node()->get_logger(), "Received mpc_x_next msgs.");
+  synched_input_x_next_msg_.mutex.lock();
+  synched_input_x_next_msg_.msg = msg;
+  synched_input_x_next_msg_.mutex.unlock();
+}
+
+void LinearFeedbackControllerRos::interpolate_control_reference(
+    const rclcpp::Time& time) {
+  if (!parameters_.reference_interpolation) return;
+
+  synched_input_x_next_msg_.mutex.lock();
+  input_x_next_msg_ = synched_input_x_next_msg_.msg;
+  synched_input_x_next_msg_.mutex.unlock();
+  if (input_x_next_msg_.joint_state.position.empty()) return;  // none yet
+
+  linear_feedback_controller_msgs::sensorMsgToEigen(input_x_next_msg_,
+                                                    input_x_next_);
+
+  // Latch the wall time at which the current MPC knot became active, keyed on
+  // its reference stamp (the /sensor stamp the OCP solved from).
+  const auto& stamp = input_control_msg_.initial_state.header.stamp;
+  if (stamp.sec != last_control_ref_stamp_.sec ||
+      stamp.nanosec != last_control_ref_stamp_.nanosec) {
+    last_control_ref_stamp_ = stamp;
+    last_control_switch_time_ = time;
+  }
+  double alpha =
+      (time - last_control_switch_time_).seconds() / parameters_.mpc_period;
+  alpha = std::clamp(alpha, 0.0, 1.0);
+
+  auto& q = input_control_.initial_state.joint_state.position;
+  auto& v = input_control_.initial_state.joint_state.velocity;
+  const auto& q_next = input_x_next_.joint_state.position;
+  const auto& v_next = input_x_next_.joint_state.velocity;
+  if (q_next.size() == q.size() && v_next.size() == v.size()) {
+    q = (1.0 - alpha) * q + alpha * q_next;  // revolute joints -> linear == pin::interpolate
+    v = (1.0 - alpha) * v + alpha * v_next;
+  }
 }
 
 }  // namespace linear_feedback_controller
