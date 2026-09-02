@@ -172,8 +172,8 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackControllerRos
   void control_subscription_callback(const ControlMsg msg);
   void mpc_x_next_subscription_callback(const SensorMsg msg);
 
-  /// @brief Interpolate input_control_.initial_state (q, v) linearly between the
-  /// received knot and input_x_next_ using the fraction of the MPC cycle
+  /// @brief Interpolate input_control_.initial_state (q, v) linearly between
+  /// the received knot and input_x_next_ using the fraction of the MPC cycle
   /// elapsed since @p time. No-op if reference_interpolation is off or no
   /// mpc_x_next has been received.
   void interpolate_control_reference(const rclcpp::Time& time);
@@ -227,14 +227,17 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackControllerRos
   linear_feedback_controller_msgs::Eigen::Sensor input_x_next_;
   builtin_interfaces::msg::Time last_control_ref_stamp_;
   rclcpp::Time last_control_switch_time_{0, 0, RCL_ROS_TIME};
-  double last_interp_alpha_ = 0.0;  ///< last interpolation factor, for /lfc_debug
+  double last_interp_alpha_ =
+      0.0;  ///< last interpolation factor, for /lfc_debug
 
   // Optional realtime debug stream (see debug_publish param).
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr debug_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
+      debug_publisher_;
   std::shared_ptr<
       realtime_tools::RealtimePublisher<std_msgs::msg::Float64MultiArray>>
       debug_publisher_rt_;
-  std_msgs::msg::Float64MultiArray debug_msg_;  ///< owned buffer for try_publish
+  std_msgs::msg::Float64MultiArray
+      debug_msg_;  ///< owned buffer for try_publish
 
   // Used in the filtering of the joint velocity.
   Eigen::VectorXd new_joint_velocity_;

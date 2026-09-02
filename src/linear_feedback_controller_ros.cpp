@@ -215,7 +215,8 @@ return_type LinearFeedbackControllerRos::update_and_write_commands(
     linear_feedback_controller_msgs::controlMsgToEigen(input_control_msg_,
                                                        input_control_);
     // Delay compensation: slide the feedback reference across the MPC cycle
-    // (paper's x_tilde). No-op unless reference_interpolation and an mpc_x_next.
+    // (paper's x_tilde). No-op unless reference_interpolation and an
+    // mpc_x_next.
     interpolate_control_reference(time);
   }
   // Copy the output of the control in order to log it.
@@ -263,8 +264,7 @@ void LinearFeedbackControllerRos::publish_debug(const rclcpp::Time& time) {
   d[k++] = time.seconds();
   d[k++] = last_interp_alpha_;
   const auto put = [&](const Eigen::VectorXd& v) {
-    for (Eigen::Index i = 0; i < n; ++i)
-      d[k++] = (i < v.size()) ? v[i] : 0.0;
+    for (Eigen::Index i = 0; i < n; ++i) d[k++] = (i < v.size()) ? v[i] : 0.0;
   };
   put(lfc_.get_lf_desired_configuration());
   put(lfc_.get_lf_desired_velocity());
@@ -746,7 +746,8 @@ void LinearFeedbackControllerRos::interpolate_control_reference(
   const auto& q_next = input_x_next_.joint_state.position;
   const auto& v_next = input_x_next_.joint_state.velocity;
   if (q_next.size() == q.size() && v_next.size() == v.size()) {
-    q = (1.0 - alpha) * q + alpha * q_next;  // revolute joints -> linear == pin::interpolate
+    q = (1.0 - alpha) * q +
+        alpha * q_next;  // revolute joints -> linear == pin::interpolate
     v = (1.0 - alpha) * v + alpha * v_next;
   }
 }

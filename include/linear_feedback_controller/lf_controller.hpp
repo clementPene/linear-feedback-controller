@@ -34,8 +34,8 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
   const Eigen::VectorXd& get_feedback_torque_raw() const { return u_fb_raw_; }
   /// @brief Feedback torque actually added to the feedforward (post low-pass).
   const Eigen::VectorXd& get_feedback_torque() const { return u_fb_; }
-  /// @brief The reference configuration used (= control.initial_state q, already
-  /// interpolated across the MPC cycle by the ROS layer when enabled).
+  /// @brief The reference configuration used (= control.initial_state q,
+  /// already interpolated across the MPC cycle by the ROS layer when enabled).
   const Eigen::VectorXd& get_desired_configuration() const {
     return desired_configuration_;
   }

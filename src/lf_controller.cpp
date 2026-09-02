@@ -37,7 +37,7 @@ void LFController::initialize(const RobotModelBuilder::SharedPtr& rmb) {
 }
 
 void LFController::configure_feedback_lowpass(double cutoff_hz,
-                                             double sample_rate_hz) {
+                                              double sample_rate_hz) {
   if (cutoff_hz <= 0.0 || sample_rate_hz <= 0.0 ||
       cutoff_hz >= 0.5 * sample_rate_hz) {
     fb_lp_enabled_ = false;
@@ -82,7 +82,8 @@ const Eigen::VectorXd& LFController::compute_control(
   diff_state_.tail(rmb_->get_model().nv) =
       desired_velocity_ - measured_velocity_;
 
-  // Feedback torque, optionally low-pass filtered (see configure_feedback_lowpass).
+  // Feedback torque, optionally low-pass filtered (see
+  // configure_feedback_lowpass).
   u_fb_.noalias() = control_msg.feedback_gain * diff_state_;
   u_fb_raw_ = u_fb_;
   if (fb_lp_enabled_) {
