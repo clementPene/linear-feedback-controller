@@ -81,6 +81,11 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackController {
   /// Butterworth on the feedback torque. cutoff_hz 0 disables it.
   void configure_feedback_lowpass(double cutoff_hz, double sample_rate_hz);
 
+  /// @brief Forwards to LFController::set_feedback_gain_scale — scales the
+  /// feedback torque before it is added to the feedforward (0 = feedforward
+  /// only, 1 = nominal).
+  void set_feedback_gain_scale(double scale);
+
   RobotModelBuilder::ConstSharedPtr get_robot_model() const;
 
   /// @name Introspection of the last LF compute_control() (for /lfc_debug).

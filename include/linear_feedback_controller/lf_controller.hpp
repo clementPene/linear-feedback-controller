@@ -24,6 +24,11 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
   /// @param sample_rate_hz the rate compute_control() is called at.
   void configure_feedback_lowpass(double cutoff_hz, double sample_rate_hz);
 
+  /// @brief Scale the feedback torque before it is added to the feedforward.
+  /// @param scale 1.0 = nominal, 0.0 = feedforward only, 0<s<1 lowers the
+  /// fast-loop gain. Applied after the optional low-pass.
+  void set_feedback_gain_scale(double scale) { fb_scale_ = scale; }
+
   const Eigen::VectorXd& compute_control(
       const linear_feedback_controller_msgs::Eigen::Sensor& sensor_msg,
       const linear_feedback_controller_msgs::Eigen::Control& control_msg);
@@ -73,6 +78,10 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
   Eigen::VectorXd u_fb_raw_;   ///< copy of u_fb_ before the low-pass (debug)
   Eigen::VectorXd fb_lp_out_;  ///< scratch: filtered feedback torque
   /// @}
+
+  /// @brief Multiplies u_fb before it is added to the feedforward (see
+  /// set_feedback_gain_scale). 1.0 = nominal, 0.0 = feedforward only.
+  double fb_scale_ = 1.0;
 };
 
 }  // namespace linear_feedback_controller

@@ -102,6 +102,10 @@ const Eigen::VectorXd& LFController::compute_control(
     u_fb_ = fb_lp_out_;
   }
 
+  // Optional attenuation of the fast-loop gain (see set_feedback_gain_scale).
+  // u_fb_raw_ above stays the unscaled K*(x - x_ref).
+  if (fb_scale_ != 1.0) u_fb_ *= fb_scale_;
+
   control_.noalias() = control_msg.feedforward + u_fb_;
   return control_;
 }

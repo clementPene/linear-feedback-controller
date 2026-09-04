@@ -138,6 +138,13 @@ CallbackReturn LinearFeedbackControllerRos::on_activate(
                 "is unknown (%f) — feedback low-pass DISABLED.",
                 update_rate);
   }
+
+  // Fast-loop gain scaling (see feedback_gain_scale).
+  lfc_.set_feedback_gain_scale(parameters_.feedback_gain_scale);
+  if (parameters_.feedback_gain_scale != 1.0) {
+    RCLCPP_INFO(get_node()->get_logger(), "feedback_gain_scale = %.3f",
+                parameters_.feedback_gain_scale);
+  }
   last_control_ref_stamp_ = builtin_interfaces::msg::Time();
 
   RCLCPP_INFO(get_node()->get_logger(), "Successful activation.");
