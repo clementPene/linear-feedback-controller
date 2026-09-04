@@ -282,7 +282,11 @@ void LinearFeedbackControllerRos::publish_debug(const rclcpp::Time& time) {
 
   // Realtime-safe: internally try-locks and copies; drops the sample on
   // contention rather than blocking the control loop.
+#if REALTIME_TOOLS_VERSION_AT_LEAST(3, 0, 0)
   debug_publisher_rt_->try_publish(debug_msg_);
+#else
+  debug_publisher_rt_->tryPublish(debug_msg_);
+#endif
 }
 
 bool LinearFeedbackControllerRos::update_parameters() {
