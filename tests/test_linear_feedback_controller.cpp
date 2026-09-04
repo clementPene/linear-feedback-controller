@@ -374,7 +374,8 @@ TEST_P(LinearFeedbackControllerTest,
   // Disabled (cutoff <= 0) must forward through as a no-op: exact match with
   // the unfiltered expectation.
   ctrl.configure_feedback_lowpass(/*cutoff_hz=*/0.0, /*sample_rate_hz=*/1000.0);
-  const Eigen::VectorXd expected_lf = ExpectedLFControlFrom(model, sensor, control);
+  const Eigen::VectorXd expected_lf =
+      ExpectedLFControlFrom(model, sensor, control);
   EXPECT_PRED2(AreAlmostEquals(1e-9),
                ctrl.compute_control(pd_timeout + 1ms, sensor, control,
                                     /*gravity_compensation=*/false),
@@ -384,7 +385,8 @@ TEST_P(LinearFeedbackControllerTest,
   // first LF-path call still matches the unfiltered expectation exactly --
   // this alone proves the call reached LFController, with no need to
   // reproduce the Butterworth coefficients here.
-  ctrl.configure_feedback_lowpass(/*cutoff_hz=*/10.0, /*sample_rate_hz=*/1000.0);
+  ctrl.configure_feedback_lowpass(/*cutoff_hz=*/10.0,
+                                  /*sample_rate_hz=*/1000.0);
   EXPECT_PRED2(AreAlmostEquals(1e-9),
                ctrl.compute_control(pd_timeout + 2ms, sensor, control,
                                     /*gravity_compensation=*/false),
