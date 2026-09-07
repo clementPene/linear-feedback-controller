@@ -138,6 +138,13 @@ CallbackReturn LinearFeedbackControllerRos::on_activate(
                 "is unknown (%f) — feedback low-pass DISABLED.",
                 update_rate);
   }
+
+  // Fast-loop gain scaling (see feedback_gain_scale).
+  lfc_.set_feedback_gain_scale(parameters_.feedback_gain_scale);
+  if (parameters_.feedback_gain_scale != 1.0) {
+    RCLCPP_INFO(get_node()->get_logger(), "feedback_gain_scale = %.3f",
+                parameters_.feedback_gain_scale);
+  }
   last_control_ref_stamp_ = builtin_interfaces::msg::Time();
 
   RCLCPP_INFO(get_node()->get_logger(), "Successful activation.");
@@ -215,7 +222,8 @@ return_type LinearFeedbackControllerRos::update_and_write_commands(
     linear_feedback_controller_msgs::controlMsgToEigen(input_control_msg_,
                                                        input_control_);
     // Delay compensation: slide the feedback reference across the MPC cycle
-    // (paper's x_tilde). No-op unless reference_interpolation and an mpc_x_next.
+    // (paper's x_tilde). No-op unless reference_interpolation and the control
+    // carries next_states.
     interpolate_control_reference(time);
   }
   // Copy the output of the control in order to log it.
@@ -263,8 +271,7 @@ void LinearFeedbackControllerRos::publish_debug(const rclcpp::Time& time) {
   d[k++] = time.seconds();
   d[k++] = last_interp_alpha_;
   const auto put = [&](const Eigen::VectorXd& v) {
-    for (Eigen::Index i = 0; i < n; ++i)
-      d[k++] = (i < v.size()) ? v[i] : 0.0;
+    for (Eigen::Index i = 0; i < n; ++i) d[k++] = (i < v.size()) ? v[i] : 0.0;
   };
   put(lfc_.get_lf_desired_configuration());
   put(lfc_.get_lf_desired_velocity());
@@ -275,7 +282,11 @@ void LinearFeedbackControllerRos::publish_debug(const rclcpp::Time& time) {
 
   // Realtime-safe: internally try-locks and copies; drops the sample on
   // contention rather than blocking the control loop.
+#if REALTIME_TOOLS_VERSION_AT_LEAST(3, 0, 0)
   debug_publisher_rt_->try_publish(debug_msg_);
+#else
+  debug_publisher_rt_->tryPublish(debug_msg_);
+#endif
 }
 
 bool LinearFeedbackControllerRos::update_parameters() {
@@ -668,10 +679,6 @@ bool LinearFeedbackControllerRos::allocate_memory() {
       "control", qos,
       std::bind(&LinearFeedbackControllerRos::control_subscription_callback,
                 this, _1));
-  mpc_x_next_subscriber_ = get_node()->create_subscription<SensorMsg>(
-      "mpc_x_next", qos,
-      std::bind(&LinearFeedbackControllerRos::mpc_x_next_subscription_callback,
-                this, _1));
 
   if (parameters_.debug_publish) {
     debug_publisher_ =
@@ -717,26 +724,14 @@ void LinearFeedbackControllerRos::control_subscription_callback(
   synched_input_control_msg_.mutex.unlock();
 }
 
-void LinearFeedbackControllerRos::mpc_x_next_subscription_callback(
-    const SensorMsg msg) {
-  RCLCPP_INFO_ONCE(get_node()->get_logger(), "Received mpc_x_next msgs.");
-  synched_input_x_next_msg_.mutex.lock();
-  synched_input_x_next_msg_.msg = msg;
-  synched_input_x_next_msg_.mutex.unlock();
-}
-
 void LinearFeedbackControllerRos::interpolate_control_reference(
     const rclcpp::Time& time) {
   last_interp_alpha_ = 0.0;
   if (!parameters_.reference_interpolation) return;
+  if (input_control_.next_states.empty()) return;  // none provided this cycle
 
-  synched_input_x_next_msg_.mutex.lock();
-  input_x_next_msg_ = synched_input_x_next_msg_.msg;
-  synched_input_x_next_msg_.mutex.unlock();
-  if (input_x_next_msg_.joint_state.position.empty()) return;  // none yet
-
-  linear_feedback_controller_msgs::sensorMsgToEigen(input_x_next_msg_,
-                                                    input_x_next_);
+  const auto& x1 = input_control_.initial_state;
+  const auto& x2 = input_control_.next_states.front();
 
   // Latch the wall time at which the current MPC knot became active, keyed on
   // its reference stamp (the /sensor stamp the OCP solved from).
@@ -746,17 +741,23 @@ void LinearFeedbackControllerRos::interpolate_control_reference(
     last_control_ref_stamp_ = stamp;
     last_control_switch_time_ = time;
   }
-  double alpha =
-      (time - last_control_switch_time_).seconds() / parameters_.mpc_period;
+
+  // The interpolation period is read from x1/x2's own stamps, not assumed --
+  // see Control.msg's next_states contract.
+  const double period = (x2.stamp - x1.stamp).seconds();
+  if (period <= 0.0) return;  // bad/missing stamps, hold the reference
+
+  double alpha = (time - last_control_switch_time_).seconds() / period;
   alpha = std::clamp(alpha, 0.0, 1.0);
   last_interp_alpha_ = alpha;
 
   auto& q = input_control_.initial_state.joint_state.position;
   auto& v = input_control_.initial_state.joint_state.velocity;
-  const auto& q_next = input_x_next_.joint_state.position;
-  const auto& v_next = input_x_next_.joint_state.velocity;
+  const auto& q_next = x2.joint_state.position;
+  const auto& v_next = x2.joint_state.velocity;
   if (q_next.size() == q.size() && v_next.size() == v.size()) {
-    q = (1.0 - alpha) * q + alpha * q_next;  // revolute joints -> linear == pin::interpolate
+    q = (1.0 - alpha) * q +
+        alpha * q_next;  // revolute joints -> linear == pin::interpolate
     v = (1.0 - alpha) * v + alpha * v_next;
   }
 }
