@@ -79,6 +79,16 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
   const Eigen::VectorXd& get_desired_velocity() const {
     return desired_velocity_;
   }
+  /// @brief The [0,1] blend gating the contact-force channel (see
+  /// configure_contact_force_feedback). Always 0 when n_force_dirs_ == 0.
+  double get_contact_force_blend() const { return force_blend_; }
+  /// @brief The contact-force channel's own isolated contribution to
+  /// get_feedback_torque_raw(), i.e. feedback_gain's last n_force_dirs_
+  /// columns times diff_state_'s force tail. Zero vector when
+  /// n_force_dirs_ == 0 (still joint_nv-sized).
+  const Eigen::VectorXd& get_contact_force_torque() const {
+    return u_fb_force_;
+  }
   /// @}
 
  private:
@@ -125,6 +135,10 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
   Eigen::VectorXd u_fb_raw_;   ///< copy of u_fb_ before the low-pass (debug)
   Eigen::VectorXd fb_lp_out_;  ///< scratch: filtered feedback torque
   /// @}
+
+  /// @brief Isolated contact-force channel contribution to u_fb_raw_ (see
+  /// get_contact_force_torque). Zero when n_force_dirs_ == 0.
+  Eigen::VectorXd u_fb_force_;
 
   /// @brief Multiplies u_fb before it is added to the feedforward (see
   /// set_feedback_gain_scale). 1.0 = nominal, 0.0 = feedforward only.

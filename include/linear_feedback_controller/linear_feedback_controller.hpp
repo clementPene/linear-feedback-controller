@@ -116,6 +116,14 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackController {
   const Eigen::VectorXd& get_lf_desired_velocity() const {
     return lf_controller_.get_desired_velocity();
   }
+  /// @brief Forwards to LFController::get_contact_force_blend.
+  double get_lf_contact_force_blend() const {
+    return lf_controller_.get_contact_force_blend();
+  }
+  /// @brief Forwards to LFController::get_contact_force_torque.
+  const Eigen::VectorXd& get_lf_contact_force_torque() const {
+    return lf_controller_.get_contact_force_torque();
+  }
   /// @}
 
  private:

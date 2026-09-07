@@ -50,6 +50,7 @@ void LFController::initialize(const RobotModelBuilder::SharedPtr& rmb,
 
   u_fb_ = Eigen::VectorXd::Zero(joint_nv);
   u_fb_raw_ = Eigen::VectorXd::Zero(joint_nv);
+  u_fb_force_ = Eigen::VectorXd::Zero(joint_nv);
   fb_lp_out_ = Eigen::VectorXd::Zero(joint_nv);
   fb_lp_x1_ = Eigen::VectorXd::Zero(joint_nv);
   fb_lp_x2_ = Eigen::VectorXd::Zero(joint_nv);
@@ -146,6 +147,19 @@ const Eigen::VectorXd& LFController::compute_control(
   // configure_feedback_lowpass).
   u_fb_.noalias() = control_msg.feedback_gain * diff_state_;
   u_fb_raw_ = u_fb_;
+
+  // Isolated contact-force channel contribution (debug introspection only,
+  // see get_contact_force_torque) -- feedback_gain's last n_force_dirs_
+  // columns times diff_state_'s force tail, pre-low-pass (the filter mixes
+  // q/v/f contributions in the frequency domain, they aren't separable
+  // after it).
+  if (n_force_dirs_ > 0) {
+    u_fb_force_.noalias() = control_msg.feedback_gain.rightCols(n_force_dirs_) *
+                            diff_state_.tail(n_force_dirs_);
+  } else {
+    u_fb_force_.setZero();
+  }
+
   if (fb_lp_enabled_) {
     if (!fb_lp_primed_) {
       fb_lp_x1_ = fb_lp_x2_ = fb_lp_y1_ = fb_lp_y2_ = u_fb_;

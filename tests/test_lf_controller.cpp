@@ -327,6 +327,11 @@ TEST_F(LFControllerTest, ContactForceFeedbackAppliesWhenContactActive) {
   // u_fb = Kf * (f0_z - f_meas_z) = 3.0 * (5.0 - 2.0) = 9.0, on joint 0 only.
   EXPECT_NEAR(control(0), 9.0, 1e-9);
   EXPECT_NEAR(control(1), 0.0, 1e-9);
+  // Introspection (see /lfc_debug): blend snapped to 1, and since Kq/Kv are
+  // zero in this test's gain the isolated force torque equals u_fb exactly.
+  EXPECT_NEAR(controller_->get_contact_force_blend(), 1.0, 1e-9);
+  ASSERT_TRUE(controller_->get_contact_force_torque().isApprox(
+      controller_->get_feedback_torque_raw(), 1e-9));
 }
 
 TEST_F(LFControllerTest, ContactForceFeedbackGatedOffWhenContactInactive) {
@@ -373,6 +378,7 @@ TEST_F(LFControllerTest, ContactForceFeedbackGatedOffWhenContactInactive) {
 
   EXPECT_NEAR(control(0), 0.0, 1e-9);
   EXPECT_NEAR(control(1), 0.0, 1e-9);
+  EXPECT_NEAR(controller_->get_contact_force_blend(), 0.0, 1e-9);
 }
 
 TEST_F(LFControllerTest, ContactForceFeedbackMissingMeasuredContactIsSafe) {

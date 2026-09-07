@@ -294,11 +294,12 @@ void LinearFeedbackControllerRos::publish_debug(const rclcpp::Time& time) {
 
   auto& d = debug_msg_.data;
   const Eigen::Index n = output_joint_effort_.size();
-  if (static_cast<Eigen::Index>(d.size()) != 2 + 6 * n) return;
+  if (static_cast<Eigen::Index>(d.size()) != 3 + 7 * n) return;
 
   size_t k = 0;
   d[k++] = time.seconds();
   d[k++] = last_interp_alpha_;
+  d[k++] = lfc_.get_lf_contact_force_blend();
   const auto put = [&](const Eigen::VectorXd& v) {
     for (Eigen::Index i = 0; i < n; ++i) d[k++] = (i < v.size()) ? v[i] : 0.0;
   };
@@ -307,6 +308,7 @@ void LinearFeedbackControllerRos::publish_debug(const rclcpp::Time& time) {
   put(input_control_.feedforward);
   put(lfc_.get_lf_feedback_torque_raw());
   put(lfc_.get_lf_feedback_torque());
+  put(lfc_.get_lf_contact_force_torque());
   put(output_joint_effort_);
 
   // Realtime-safe: internally try-locks and copies; drops the sample on
@@ -724,8 +726,12 @@ bool LinearFeedbackControllerRos::allocate_memory() {
     debug_publisher_rt_ = std::make_shared<
         realtime_tools::RealtimePublisher<std_msgs::msg::Float64MultiArray>>(
         debug_publisher_);
-    // Layout: [ time, alpha, q_ref(nv), v_ref(nv), u_ff(nv), u_fb_raw(nv),
-    //           u_fb(nv), u_cmd(nv) ]. dim labels the blocks for offline tools.
+    // Layout: [ time, alpha, force_blend, q_ref(nv), v_ref(nv), u_ff(nv),
+    //           u_fb_raw(nv), u_fb(nv), u_fb_force(nv), u_cmd(nv) ]. dim
+    // labels the blocks for offline tools. force_blend / u_fb_force are the
+    // contact-force channel's introspection (see
+    // LFController::get_contact_force_blend/get_contact_force_torque);
+    // always 0 while contact_force_feedback.n_directions == 0.
     const auto b = [&](const std::string& label, size_t size) {
       std_msgs::msg::MultiArrayDimension d;
       d.label = label;
@@ -736,13 +742,15 @@ bool LinearFeedbackControllerRos::allocate_memory() {
     const size_t n = static_cast<size_t>(joint_nv);
     b("time", 1);
     b("alpha", 1);
+    b("force_blend", 1);
     b("q_ref", n);
     b("v_ref", n);
     b("u_ff", n);
     b("u_fb_raw", n);
     b("u_fb", n);
+    b("u_fb_force", n);
     b("u_cmd", n);
-    debug_msg_.data.assign(2 + 6 * n, 0.0);
+    debug_msg_.data.assign(3 + 7 * n, 0.0);
   }
   return true;
 }
