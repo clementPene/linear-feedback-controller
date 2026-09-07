@@ -280,6 +280,134 @@ TEST_F(LFControllerTest, FeedbackLowpassPrimesOnFirstSampleThenFilters) {
       controller_->get_feedback_torque_raw(), 1e-6));
 }
 
+TEST_F(LFControllerTest, ContactForceFeedbackAppliesWhenContactActive) {
+  // Re-initialize with 1 augmented force direction (was 0 in SetUp).
+  controller_->initialize(mock_robot_builder_, /*n_force_dirs=*/1);
+  EXPECT_CALL(*mock_robot_builder_, construct_robot_state(_, _, _))
+      .WillRepeatedly(Invoke(&PassThroughConstructRobotState));
+
+  const int nv = 2;
+  linear_feedback_controller_msgs::Eigen::Sensor sensor_msg;
+  sensor_msg.joint_state.position = Eigen::Vector2d(0.0, 0.0);
+  sensor_msg.joint_state.velocity = Eigen::Vector2d(0.0, 0.0);
+
+  linear_feedback_controller_msgs::Eigen::Contact f0_contact;
+  f0_contact.name = "ft_sensor";
+  f0_contact.active = true;
+  f0_contact.wrench = Eigen::Matrix<double, 6, 1>::Zero();
+  f0_contact.wrench(2) = 5.0;  // f0_z, the OCP's setpoint
+
+  linear_feedback_controller_msgs::Eigen::Control control_msg;
+  control_msg.initial_state.joint_state.position = Eigen::Vector2d(0.0, 0.0);
+  control_msg.initial_state.joint_state.velocity = Eigen::Vector2d(0.0, 0.0);
+  control_msg.initial_state.contacts = {f0_contact};
+  control_msg.feedforward = Eigen::Vector2d(0.0, 0.0);
+  // K = [Kq(2) | Kv(2) | Kf(1)]. Only the force column is nonzero, on joint 0.
+  Eigen::MatrixXd feedback_gain_input(nv, 2 * nv + 1);
+  feedback_gain_input.setZero();
+  feedback_gain_input(0, 2 * nv) = 3.0;
+  control_msg.feedback_gain = feedback_gain_input;
+
+  linear_feedback_controller_msgs::Eigen::Contact meas_contact;
+  meas_contact.name = "ft_sensor";
+  meas_contact.active = true;
+  meas_contact.wrench = Eigen::Matrix<double, 6, 1>::Zero();
+  meas_contact.wrench(2) = 2.0;  // f_meas_z, the live reading
+  linear_feedback_controller_msgs::Eigen::Sensor measured_force_sensor_msg;
+  measured_force_sensor_msg.contacts = {meas_contact};
+
+  // activation_time_constant = 0: hard on/off, blend snaps to 1 instantly.
+  controller_->configure_contact_force_feedback(
+      "ft_sensor", /*wrench_indices=*/{2},
+      /*activation_time_constant=*/0.0, /*sample_rate_hz=*/1000.0);
+
+  const Eigen::VectorXd& control = controller_->compute_control(
+      sensor_msg, control_msg, measured_force_sensor_msg);
+
+  // u_fb = Kf * (f0_z - f_meas_z) = 3.0 * (5.0 - 2.0) = 9.0, on joint 0 only.
+  EXPECT_NEAR(control(0), 9.0, 1e-9);
+  EXPECT_NEAR(control(1), 0.0, 1e-9);
+}
+
+TEST_F(LFControllerTest, ContactForceFeedbackGatedOffWhenContactInactive) {
+  controller_->initialize(mock_robot_builder_, /*n_force_dirs=*/1);
+  EXPECT_CALL(*mock_robot_builder_, construct_robot_state(_, _, _))
+      .WillRepeatedly(Invoke(&PassThroughConstructRobotState));
+
+  const int nv = 2;
+  linear_feedback_controller_msgs::Eigen::Sensor sensor_msg;
+  sensor_msg.joint_state.position = Eigen::Vector2d(0.0, 0.0);
+  sensor_msg.joint_state.velocity = Eigen::Vector2d(0.0, 0.0);
+
+  linear_feedback_controller_msgs::Eigen::Contact f0_contact;
+  f0_contact.name = "ft_sensor";
+  f0_contact.active = true;
+  f0_contact.wrench = Eigen::Matrix<double, 6, 1>::Zero();
+  f0_contact.wrench(2) = 5.0;
+
+  linear_feedback_controller_msgs::Eigen::Control control_msg;
+  control_msg.initial_state.joint_state.position = Eigen::Vector2d(0.0, 0.0);
+  control_msg.initial_state.joint_state.velocity = Eigen::Vector2d(0.0, 0.0);
+  control_msg.initial_state.contacts = {f0_contact};
+  control_msg.feedforward = Eigen::Vector2d(0.0, 0.0);
+  Eigen::MatrixXd feedback_gain_input(nv, 2 * nv + 1);
+  feedback_gain_input.setZero();
+  feedback_gain_input(0, 2 * nv) = 3.0;
+  control_msg.feedback_gain = feedback_gain_input;
+
+  // Live reading says NOT in contact -- f0_z != f_meas_z should not matter.
+  linear_feedback_controller_msgs::Eigen::Contact meas_contact;
+  meas_contact.name = "ft_sensor";
+  meas_contact.active = false;
+  meas_contact.wrench = Eigen::Matrix<double, 6, 1>::Zero();
+  meas_contact.wrench(2) = 2.0;
+  linear_feedback_controller_msgs::Eigen::Sensor measured_force_sensor_msg;
+  measured_force_sensor_msg.contacts = {meas_contact};
+
+  controller_->configure_contact_force_feedback(
+      "ft_sensor", /*wrench_indices=*/{2},
+      /*activation_time_constant=*/0.0, /*sample_rate_hz=*/1000.0);
+
+  const Eigen::VectorXd& control = controller_->compute_control(
+      sensor_msg, control_msg, measured_force_sensor_msg);
+
+  EXPECT_NEAR(control(0), 0.0, 1e-9);
+  EXPECT_NEAR(control(1), 0.0, 1e-9);
+}
+
+TEST_F(LFControllerTest, ContactForceFeedbackMissingMeasuredContactIsSafe) {
+  // n_force_dirs > 0 but no measured_force_sensor_msg carries the contact
+  // (e.g. topic never published) -- must not crash, and contribute nothing.
+  controller_->initialize(mock_robot_builder_, /*n_force_dirs=*/1);
+  EXPECT_CALL(*mock_robot_builder_, construct_robot_state(_, _, _))
+      .WillRepeatedly(Invoke(&PassThroughConstructRobotState));
+
+  const int nv = 2;
+  linear_feedback_controller_msgs::Eigen::Sensor sensor_msg;
+  sensor_msg.joint_state.position = Eigen::Vector2d(0.0, 0.0);
+  sensor_msg.joint_state.velocity = Eigen::Vector2d(0.0, 0.0);
+
+  linear_feedback_controller_msgs::Eigen::Control control_msg;
+  control_msg.initial_state.joint_state.position = Eigen::Vector2d(0.0, 0.0);
+  control_msg.initial_state.joint_state.velocity = Eigen::Vector2d(0.0, 0.0);
+  control_msg.feedforward = Eigen::Vector2d(0.0, 0.0);
+  Eigen::MatrixXd feedback_gain_input(nv, 2 * nv + 1);
+  feedback_gain_input.setZero();
+  feedback_gain_input(0, 2 * nv) = 3.0;
+  control_msg.feedback_gain = feedback_gain_input;
+
+  controller_->configure_contact_force_feedback(
+      "ft_sensor", /*wrench_indices=*/{2},
+      /*activation_time_constant=*/0.0, /*sample_rate_hz=*/1000.0);
+
+  // Default-constructed (empty contacts) measured_force_sensor_msg.
+  const Eigen::VectorXd& control =
+      controller_->compute_control(sensor_msg, control_msg);
+
+  EXPECT_NEAR(control(0), 0.0, 1e-9);
+  EXPECT_NEAR(control(1), 0.0, 1e-9);
+}
+
 // Robustness fixture
 class LFControllerRobustnessTest : public ::testing::Test {
  protected:

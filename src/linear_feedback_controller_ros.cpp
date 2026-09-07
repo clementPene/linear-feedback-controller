@@ -145,6 +145,21 @@ CallbackReturn LinearFeedbackControllerRos::on_activate(
     RCLCPP_INFO(get_node()->get_logger(), "feedback_gain_scale = %.3f",
                 parameters_.feedback_gain_scale);
   }
+
+  // Contact-force feedback channel (see contact_force_feedback params).
+  // Same sample rate as the feedback low-pass above.
+  if (parameters_.contact_force_feedback.n_directions > 0) {
+    const std::vector<int64_t>& wi = parameters_.contact_force_feedback.wrench_indices;
+    lfc_.configure_contact_force_feedback(
+        parameters_.contact_force_feedback.contact_name,
+        std::vector<int>(wi.begin(), wi.end()),
+        parameters_.contact_force_feedback.activation_time_constant,
+        update_rate);
+    RCLCPP_INFO(get_node()->get_logger(),
+                "contact_force_feedback: %d direction(s) on contact '%s'",
+                static_cast<int>(parameters_.contact_force_feedback.n_directions),
+                parameters_.contact_force_feedback.contact_name.c_str());
+  }
   last_control_ref_stamp_ = builtin_interfaces::msg::Time();
 
   RCLCPP_INFO(get_node()->get_logger(), "Successful activation.");
@@ -226,10 +241,24 @@ return_type LinearFeedbackControllerRos::update_and_write_commands(
     // carries next_states.
     interpolate_control_reference(time);
   }
+
+  // Copy the last contact-force sensor reading (see contact_force_feedback).
+  // Absent/never-published -> empty contacts -> the force channel gates off
+  // (see LFController::compute_control). No "first message" gating needed:
+  // a missing contact is already the safe default.
+  if (measured_force_sensor_subscriber_) {
+    synched_measured_force_sensor_msg_.mutex.lock();
+    input_measured_force_sensor_msg_ = synched_measured_force_sensor_msg_.msg;
+    synched_measured_force_sensor_msg_.mutex.unlock();
+    linear_feedback_controller_msgs::sensorMsgToEigen(
+        input_measured_force_sensor_msg_, input_measured_force_sensor_);
+  }
+
   // Copy the output of the control in order to log it.
-  output_joint_effort_ =
-      lfc_.compute_control(time_lfc, input_sensor_, input_control_,
-                           parameters_.remove_gravity_compensation_effort);
+  output_joint_effort_ = lfc_.compute_control(
+      time_lfc, input_sensor_, input_control_,
+      parameters_.remove_gravity_compensation_effort,
+      input_measured_force_sensor_);
   if (output_joint_effort_.hasNaN()) {
     RCLCPP_ERROR_STREAM(get_node()->get_logger(),
                         "NaN detect in output joint effort command: "
@@ -680,6 +709,14 @@ bool LinearFeedbackControllerRos::allocate_memory() {
       std::bind(&LinearFeedbackControllerRos::control_subscription_callback,
                 this, _1));
 
+  if (parameters_.contact_force_feedback.n_directions > 0) {
+    measured_force_sensor_subscriber_ = get_node()->create_subscription<SensorMsg>(
+        parameters_.contact_force_feedback.measured_topic, qos,
+        std::bind(
+            &LinearFeedbackControllerRos::measured_force_sensor_subscription_callback,
+            this, _1));
+  }
+
   if (parameters_.debug_publish) {
     debug_publisher_ =
         get_node()->create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -722,6 +759,15 @@ void LinearFeedbackControllerRos::control_subscription_callback(
   synched_input_control_msg_.mutex.lock();
   synched_input_control_msg_.msg = msg;
   synched_input_control_msg_.mutex.unlock();
+}
+
+void LinearFeedbackControllerRos::measured_force_sensor_subscription_callback(
+    const SensorMsg msg) {
+  RCLCPP_INFO_ONCE(get_node()->get_logger(),
+                   "Received contact-force sensor msgs.");
+  synched_measured_force_sensor_msg_.mutex.lock();
+  synched_measured_force_sensor_msg_.msg = msg;
+  synched_measured_force_sensor_msg_.mutex.unlock();
 }
 
 void LinearFeedbackControllerRos::interpolate_control_reference(

@@ -6,6 +6,22 @@
 
 namespace linear_feedback_controller {
 
+namespace {
+// Looks up a Contact by name. Returns nullptr if absent (e.g. the topic
+// hasn't published yet, or this cycle's message doesn't carry it).
+const linear_feedback_controller_msgs::Eigen::Contact* find_contact(
+    const std::vector<linear_feedback_controller_msgs::Eigen::Contact>&
+        contacts,
+    const std::string& name) {
+  for (const auto& contact : contacts) {
+    if (contact.name == name) {
+      return &contact;
+    }
+  }
+  return nullptr;
+}
+}  // namespace
+
 LFController::LFController() {}
 
 LFController::~LFController() {}
@@ -63,9 +79,24 @@ void LFController::configure_feedback_lowpass(double cutoff_hz,
   fb_lp_primed_ = false;
 }
 
+void LFController::configure_contact_force_feedback(
+    const std::string& contact_name, const std::vector<int>& wrench_indices,
+    double activation_time_constant, double sample_rate_hz) {
+  force_contact_name_ = contact_name;
+  force_wrench_indices_ = wrench_indices;
+  if (activation_time_constant <= 0.0 || sample_rate_hz <= 0.0) {
+    force_blend_alpha_ = 1.0;  // hard on/off
+  } else {
+    force_blend_alpha_ =
+        1.0 - std::exp(-1.0 / (activation_time_constant * sample_rate_hz));
+  }
+}
+
 const Eigen::VectorXd& LFController::compute_control(
     const linear_feedback_controller_msgs::Eigen::Sensor& sensor_msg,
-    const linear_feedback_controller_msgs::Eigen::Control& control_msg) {
+    const linear_feedback_controller_msgs::Eigen::Control& control_msg,
+    const linear_feedback_controller_msgs::Eigen::Sensor&
+        measured_force_sensor_msg) {
   if (!rmb_) {
     throw std::runtime_error(
         "LFController is not initialized. Call initialize() before "
@@ -81,13 +112,35 @@ const Eigen::VectorXd& LFController::compute_control(
   rmb_->construct_robot_state(sensor_msg, measured_configuration_,
                               measured_velocity_);
 
-  // diff_state = [ q_des (-) q_meas ; v_des - v_meas ; df(n_force_dirs_) ]. The
-  // contact-force error tail is filled by a later step; it stays zero here so
-  // the augmented feedback_gain columns contribute nothing until then.
+  // diff_state = [ q_des (-) q_meas ; v_des - v_meas ; df(n_force_dirs_) ].
   const auto nv = rmb_->get_model().nv;
   pinocchio::difference(rmb_->get_model(), measured_configuration_,
                         desired_configuration_, diff_state_.head(nv));
   diff_state_.segment(nv, nv) = desired_velocity_ - measured_velocity_;
+
+  // Contact-force error tail: df = blend * (f0 - f_meas), gated on the
+  // measured contact's .active by a first-order smoothed blend (see
+  // configure_contact_force_feedback). f0 comes from this cycle's control
+  // (the OCP's own setpoint); f_meas from the live force-sensor reading.
+  if (n_force_dirs_ > 0) {
+    const auto* f0_contact =
+        find_contact(ctrl_init.contacts, force_contact_name_);
+    const auto* meas_contact =
+        find_contact(measured_force_sensor_msg.contacts, force_contact_name_);
+    const bool active = meas_contact != nullptr && meas_contact->active;
+    force_blend_ +=
+        force_blend_alpha_ * ((active ? 1.0 : 0.0) - force_blend_);
+    if (f0_contact != nullptr && meas_contact != nullptr &&
+        static_cast<int>(force_wrench_indices_.size()) == n_force_dirs_) {
+      for (int i = 0; i < n_force_dirs_; ++i) {
+        diff_state_(2 * nv + i) =
+            force_blend_ * (f0_contact->wrench(force_wrench_indices_[i]) -
+                            meas_contact->wrench(force_wrench_indices_[i]));
+      }
+    } else {
+      diff_state_.tail(n_force_dirs_).setZero();
+    }
+  }
 
   // Feedback torque, optionally low-pass filtered (see
   // configure_feedback_lowpass).

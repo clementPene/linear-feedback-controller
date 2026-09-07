@@ -75,11 +75,15 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackController {
    * @param time
    * @param sensor
    * @param control
+   * @param measured_force_sensor_msg live reading of the augmented force
+   * channel's contact (see configure_contact_force_feedback). Ignored while
+   * contact_force_n_directions == 0.
    * @return const Eigen::VectorXd&
    */
   const Eigen::VectorXd& compute_control(
       const TimePoint& time, const Sensor& sensor, const Control& control,
-      const bool remove_gravity_compensation_effort);
+      const bool remove_gravity_compensation_effort,
+      const Sensor& measured_force_sensor_msg = {});
 
   /// @brief Forwards to LFController::configure_feedback_lowpass — a 2nd-order
   /// Butterworth on the feedback torque. cutoff_hz 0 disables it.
@@ -89,6 +93,11 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackController {
   /// feedback torque before it is added to the feedforward (0 = feedforward
   /// only, 1 = nominal).
   void set_feedback_gain_scale(double scale);
+
+  /// @brief Forwards to LFController::configure_contact_force_feedback.
+  void configure_contact_force_feedback(
+      const std::string& contact_name, const std::vector<int>& wrench_indices,
+      double activation_time_constant, double sample_rate_hz);
 
   RobotModelBuilder::ConstSharedPtr get_robot_model() const;
 

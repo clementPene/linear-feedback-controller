@@ -73,7 +73,8 @@ bool LinearFeedbackController::set_initial_state(
 
 const Eigen::VectorXd& LinearFeedbackController::compute_control(
     const TimePoint& time, const Sensor& sensor, const Control& control,
-    const bool remove_gravity_compensation_effort) {
+    const bool remove_gravity_compensation_effort,
+    const Sensor& measured_force_sensor_msg) {
   // Shortcuts for easier code writing.
   const auto& sensor_js = sensor.joint_state;
   const auto& ctrl_js = control.initial_state.joint_state;
@@ -148,7 +149,8 @@ const Eigen::VectorXd& LinearFeedbackController::compute_control(
 
     control_pd_ =
         pd_controller_.compute_control(sensor_js.position, sensor_js.velocity);
-    control_lf_ = lf_controller_.compute_control(sensor, control);
+    control_lf_ = lf_controller_.compute_control(sensor, control,
+                                                 measured_force_sensor_msg);
 
     if (remove_gravity_compensation_effort) {
       control_pd_ -= tau_init_;
@@ -157,7 +159,8 @@ const Eigen::VectorXd& LinearFeedbackController::compute_control(
 
     control_.noalias() = (1.0 - weight) * control_pd_ + weight * control_lf_;
   } else {
-    control_ = lf_controller_.compute_control(sensor, control);
+    control_ =
+        lf_controller_.compute_control(sensor, control, measured_force_sensor_msg);
 
     if (remove_gravity_compensation_effort) {
       control_ -= tau_gravity_;
@@ -174,6 +177,13 @@ void LinearFeedbackController::configure_feedback_lowpass(
 
 void LinearFeedbackController::set_feedback_gain_scale(double scale) {
   lf_controller_.set_feedback_gain_scale(scale);
+}
+
+void LinearFeedbackController::configure_contact_force_feedback(
+    const std::string& contact_name, const std::vector<int>& wrench_indices,
+    double activation_time_constant, double sample_rate_hz) {
+  lf_controller_.configure_contact_force_feedback(
+      contact_name, wrench_indices, activation_time_constant, sample_rate_hz);
 }
 
 RobotModelBuilder::ConstSharedPtr LinearFeedbackController::get_robot_model()

@@ -1,6 +1,9 @@
 #ifndef LINEAR_FEEDBACK_CONTROLLER_LFCONTROLLER_HPP
 #define LINEAR_FEEDBACK_CONTROLLER_LFCONTROLLER_HPP
 
+#include <string>
+#include <vector>
+
 #include "Eigen/Core"
 #include "linear_feedback_controller/robot_model_builder.hpp"
 #include "linear_feedback_controller/visibility.hpp"
@@ -34,9 +37,32 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
   /// fast-loop gain. Applied after the optional low-pass.
   void set_feedback_gain_scale(double scale) { fb_scale_ = scale; }
 
+  /// @brief Configure the augmented contact-force feedback channel (see
+  /// initialize's n_force_dirs). No-op if n_force_dirs_ == 0.
+  /// @param contact_name name of the Contact entry (in both
+  /// control_msg.initial_state.contacts and the measured Sensor passed to
+  /// compute_control) whose wrench feeds the force channel.
+  /// @param wrench_indices which components of the 6D wrench
+  /// [fx,fy,fz,tx,ty,tz] feed the force channel, in order. Must have
+  /// n_force_dirs_ elements.
+  /// @param activation_time_constant first-order time constant (s) smoothing
+  /// the [0,1] blend that gates the force channel on the measured contact's
+  /// .active flag. <= 0 = hard on/off.
+  /// @param sample_rate_hz the rate compute_control() is called at.
+  void configure_contact_force_feedback(const std::string& contact_name,
+                                        const std::vector<int>& wrench_indices,
+                                        double activation_time_constant,
+                                        double sample_rate_hz);
+
+  /// @param measured_force_sensor_msg live reading of the force channel's
+  /// contact (see configure_contact_force_feedback), e.g. from a dedicated
+  /// force-sensor topic. Ignored when n_force_dirs_ == 0. Defaults to an
+  /// empty Sensor (no matching contact found -> force channel gated off).
   const Eigen::VectorXd& compute_control(
       const linear_feedback_controller_msgs::Eigen::Sensor& sensor_msg,
-      const linear_feedback_controller_msgs::Eigen::Control& control_msg);
+      const linear_feedback_controller_msgs::Eigen::Control& control_msg,
+      const linear_feedback_controller_msgs::Eigen::Sensor&
+          measured_force_sensor_msg = {});
 
   /// @name Introspection of the last compute_control() call (for /lfc_debug).
   /// @{
@@ -71,6 +97,18 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LFController {
 
   /// @brief Number of contact-force directions in diff_state_'s tail.
   int n_force_dirs_ = 0;
+
+  /// @name Contact-force feedback channel (see configure_contact_force_feedback)
+  /// @{
+  std::string force_contact_name_;
+  std::vector<int> force_wrench_indices_;
+  /// @brief Current [0,1] blend gating diff_state_'s force tail on the
+  /// measured contact's .active flag (first-order smoothed).
+  double force_blend_ = 0.0;
+  /// @brief Exponential step coefficient for force_blend_'s smoothing.
+  /// 1.0 = hard on/off (snaps in one compute_control() call).
+  double force_blend_alpha_ = 1.0;
+  /// @}
 
   Eigen::VectorXd control_;
   RobotModelBuilder::SharedPtr rmb_;

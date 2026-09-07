@@ -55,6 +55,11 @@ struct LINEAR_FEEDBACK_CONTROLLER_PRIVATE ProtectedControlMsg {
   std::mutex mutex;
 };
 
+struct LINEAR_FEEDBACK_CONTROLLER_PRIVATE ProtectedSensorMsg {
+  SensorMsg msg;
+  std::mutex mutex;
+};
+
 class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackControllerRos
     : public ChainableControllerInterface {
  public:
@@ -166,6 +171,11 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackControllerRos
       const JointState::ConstSharedPtr& msg_joint_state);
   void control_subscription_callback(const ControlMsg msg);
 
+  /// @brief Callback for contact_force_feedback.measured_topic (see
+  /// LFController::configure_contact_force_feedback). Only subscribed when
+  /// contact_force_feedback.n_directions > 0.
+  void measured_force_sensor_subscription_callback(const SensorMsg msg);
+
   /// @brief Interpolate input_control_.initial_state (q, v) linearly towards
   /// input_control_.next_states.front(), using the fraction of the interval
   /// between their two stamps elapsed since @p time. No-op if
@@ -213,6 +223,13 @@ class LINEAR_FEEDBACK_CONTROLLER_PUBLIC LinearFeedbackControllerRos
   rclcpp::Publisher<SensorMsg>::SharedPtr sensor_publisher_;
   rclcpp::Subscription<ControlMsg>::SharedPtr control_subscriber_;
   ProtectedControlMsg synched_input_control_msg_;
+
+  // Contact-force feedback channel (see contact_force_feedback params).
+  // Only subscribed when contact_force_feedback.n_directions > 0.
+  rclcpp::Subscription<SensorMsg>::SharedPtr measured_force_sensor_subscriber_;
+  ProtectedSensorMsg synched_measured_force_sensor_msg_;
+  linear_feedback_controller_msgs::msg::Sensor input_measured_force_sensor_msg_;
+  linear_feedback_controller_msgs::Eigen::Sensor input_measured_force_sensor_;
 
   // Delay-compensation reference interpolation (see reference_interpolation).
   // input_control_.next_states (populated by controlMsgToEigen from the
